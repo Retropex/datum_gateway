@@ -40,6 +40,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "datum_logger.h"
+#include "datum_api.h"
 
 void datum_utils_init(void);
 
@@ -86,6 +87,7 @@ bool datum_str_to_bool_strict(const char *s, bool *out);
 char **datum_deepcopy_charpp(const char * const *p);
 void datum_reexec();
 bool datum_secure_strequals(const char *secret, const size_t secret_len, const char *guess);
+void dynamic_hash_unit(T_DATUM_API_DASH_VARS *hash_rate, char *unit);
 
 
 static inline
