@@ -64,7 +64,13 @@
 int datum_active_threads = 0;
 int datum_active_clients = 0;
 
-int get_remote_ip(int fd, char *ip, size_t max_len) {
+int get_remote_ip(T_DATUM_CLIENT_DATA *client, char *ip, size_t max_len) {
+	if (datum_config.stratum_v1_trust_proxy) {
+		strncpy(ip, client->rem_host, max_len-1);
+		ip[max_len-1] = 0;
+		return 0;
+	}
+	int fd = client->fd;
 	struct sockaddr_storage addr;
 	socklen_t addr_len = sizeof(addr);
 	
@@ -141,6 +147,7 @@ void *datum_threadpool_thread(void *arg) {
 					my->client_data[i].new_connection = false;
 					my->client_data[i].in_buf = 0;
 					my->client_data[i].out_buf = 0;
+					my->client_data[i].proxy_line_read = false;
 					
 					// add to epoll for this thread
 					my->ev.events = EPOLLIN  | EPOLLONESHOT | EPOLLERR; // | EPOLLRDHUP
@@ -270,6 +277,18 @@ void *datum_threadpool_thread(void *arg) {
 						while (end_line != NULL) {
 							*end_line = 0; // null terminate the line
 							// this function can not be NULL
+							if (!my->client_data[cidx].proxy_line_read && strncmp(start_line, "PROXY ", 6) == 0) {
+								my->client_data[cidx].proxy_line_read = true;
+								if (datum_config.stratum_v1_trust_proxy) {
+									char src_ip[DATUM_MAX_IP_LEN] = {0};
+									sscanf(start_line, "PROXY TCP4 %15s", src_ip);
+									if (src_ip[0] == 0) sscanf(start_line, "PROXY TCP6 %45s", src_ip);
+									strncpy(my->client_data[cidx].rem_host, src_ip, DATUM_MAX_IP_LEN-1);
+								}
+								start_line = end_line + 1;
+								end_line = strchr(start_line, '\n');
+								continue;
+							}
 							j = my->app->client_cmd_func(&my->client_data[cidx], start_line);
 							if (j < 0) {
 								//LOG_PRINTF("Thread %03d --- Closing fd %d (client_cmd_func returned %d)", my->thread_id, my->client_data[cidx].fd, j);
@@ -533,7 +552,7 @@ int assign_to_thread(T_DATUM_SOCKET_APP *app, int fd) {
 		tc++;
 	}
 	
-	get_remote_ip(fd, app->datum_threads[tid].client_data[cid].rem_host, DATUM_MAX_IP_LEN);
+	get_remote_ip(&app->datum_threads[tid].client_data[cid], app->datum_threads[tid].client_data[cid].rem_host, DATUM_MAX_IP_LEN);
 	
 	DLOG_DEBUG("New client (%s) on TID %d, CID %d with fd %d. clients: %d / clients on thread: %d", app->datum_threads[tid].client_data[cid].rem_host, tid, cid, fd, tc, app->datum_threads[tid].connected_clients);
 	DLOG_DEBUG("app->datum_threads[tid].next_open_client_index = %d", app->datum_threads[tid].next_open_client_index);

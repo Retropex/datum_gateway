@@ -80,6 +80,8 @@ typedef struct T_DATUM_CLIENT_DATA {
 	void *app_client_data;
 	
 	T_DATUM_THREAD_DATA *datum_thread;
+	
+	bool proxy_line_read;
 } T_DATUM_CLIENT_DATA;
 
 typedef struct {
