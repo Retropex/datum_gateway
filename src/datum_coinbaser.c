@@ -65,6 +65,7 @@ int generate_coinbase_input(int height, char *cb, int *target_pot_index) {
 	int k, m, i;
 	int excess;
 	bool datum_active = false;
+	const char *spider = "SpiderPool";
 	
 	// let's figure out our coinbase tags w/BIP34 height
 	i = append_UNum_hex(height, &cb[0]);
@@ -82,7 +83,7 @@ int generate_coinbase_input(int height, char *cb, int *target_pot_index) {
 		tag_len[0] = strlen(datum_config.override_mining_coinbase_tag_primary);
 	}
 	tag_len[1] = strlen(datum_config.mining_coinbase_tag_secondary);
-	k = tag_len[0] + tag_len[1] + 2;
+	k = tag_len[0] + tag_len[1] + strlen(spider) + 2;
 	if (!tag_len[1]) {
 		k--;
 		if (!tag_len[0]) {
@@ -150,7 +151,10 @@ int generate_coinbase_input(int height, char *cb, int *target_pot_index) {
 			for(m=0;m<tag_len[1];m++) {
 				uchar_to_hex(&cb[i], (unsigned char)datum_config.mining_coinbase_tag_secondary[m]); i+=2; cb_input_sz++;
 			}
-			uchar_to_hex(&cb[i], 0x00); i+=2; cb_input_sz++;
+		}
+		uchar_to_hex(&cb[i], 0x0F); i+=2; cb_input_sz++;
+		for (m=0; m < strlen(spider);m++) {
+			uchar_to_hex(&cb[i], (unsigned char)spider[m]); i+=2; cb_input_sz++;
 		}
 	} else {
 		// we'll push a null char to be consistent, and to not parse the UID as if it were a pool name
