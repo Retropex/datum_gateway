@@ -84,6 +84,8 @@ const T_DATUM_CONFIG_ITEM datum_config_options[] = {
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "listen_port",				.description = "Listening port for Stratum Gateway",
 		.example_default = true,
 		.required = false, .ptr = &datum_config.stratum_v1_listen_port, 				.default_int = 23334 },
+	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "listen_lottery_port",				.description = "Port for the lottery endpoint (default: stratum_v1_listen_port + 1)",
+		.required = false, .ptr = &datum_config.stratum_v1_listen_lottery_port, 	.default_int = 0 },
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "max_clients_per_thread",	.description = "Maximum clients per Stratum server thread",
 		.required = false, .ptr = &datum_config.stratum_v1_max_clients_per_thread, 		.default_int = 128 },
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "max_threads",				.description = "Maximum Stratum server threads",
@@ -190,6 +192,8 @@ const T_DATUM_CONFIG_ITEM datum_config_options[] = {
 		.required = false, .ptr = &datum_config.datum_pooled_mining_only, 	.default_bool = true },
 	{ .var_type = DATUM_CONF_INT, 		.category = "datum", 		.name = "protocol_global_timeout",		.description = "If no valid messages are received from the DATUM server in this many seconds, give up and try to reconnect",
 		.required = false, .ptr = &datum_config.datum_protocol_global_timeout, 	.default_int = 60 },
+	{ .var_type = DATUM_CONF_BOOL, 		.category = "datum", 		.name = "lottery_endpoint",				.description = "Create a second stratum endpoint for solo lottery mining (port configured with lottery_port)",
+		.required = false, .ptr = &datum_config.datum_lottery_endpoint,	.default_bool = false },
 };
 
 #define NUM_CONFIG_ITEMS (sizeof(datum_config_options) / sizeof(datum_config_options[0]))

@@ -275,6 +275,7 @@ bool stratum_latest_empty_check_ready_for_full(void);
 
 // Server thread main loop
 void *datum_stratum_v1_socket_server(void *arg);
+void *datum_stratum_v1_socket_server_with_port(void *arg);
 // DATUM socket callbacks
 void datum_stratum_v1_socket_thread_init(T_DATUM_THREAD_DATA *my);
 void datum_stratum_v1_socket_thread_loop(T_DATUM_THREAD_DATA *my);
@@ -286,6 +287,7 @@ double datum_stratum_v1_est_total_th_sec(void);
 void datum_stratum_v1_shutdown_all(void);
 
 extern T_DATUM_SOCKET_APP *global_stratum_app;
+extern T_DATUM_SOCKET_APP *global_stratum_lottery_app;
 
 extern pthread_rwlock_t need_coinbaser_rwlocks[MAX_STRATUM_JOBS];
 extern bool need_coinbaser_rwlocks_init_done;

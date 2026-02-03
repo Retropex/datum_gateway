@@ -138,6 +138,7 @@ int main(const int argc, const char * const * const argv) {
 	
 	struct arguments arguments;
 	pthread_t pthread_datum_stratum_v1;
+	pthread_t pthread_datum_stratum_v1_lottery;
 	pthread_t pthread_datum_gateway_template;
 	int i;
 	int fail_retries=0;
@@ -229,6 +230,14 @@ int main(const int argc, const char * const * const argv) {
 	// Note: The stratum thread will wait for a template to be available for some time before panicking.
 	DLOG_DEBUG("Starting Stratum v1 server");
 	pthread_create(&pthread_datum_stratum_v1, NULL, datum_stratum_v1_socket_server, NULL);
+	
+	// Start lottery endpoint if enabled
+	if (datum_config.datum_lottery_endpoint) {
+		// Determine lottery port: use configured value or default to main port + 1
+		datum_config.stratum_v1_listen_lottery_port = datum_config.stratum_v1_listen_lottery_port > 0 ? datum_config.stratum_v1_listen_lottery_port : datum_config.stratum_v1_listen_port + 1;
+		DLOG_INFO("Starting Stratum v1 Lottery endpoint on port %d", datum_config.stratum_v1_listen_lottery_port);
+		pthread_create(&pthread_datum_stratum_v1_lottery, NULL, datum_stratum_v1_socket_server_with_port, &datum_config.stratum_v1_listen_lottery_port);
+	}
 	
 	// Randomize the reconnect delay from 5 to 20 seconds to prevent hammering the server
 	next_reconnect_attempt_ms = ( 5000 + (rand() % 15001) );

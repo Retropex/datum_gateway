@@ -107,6 +107,7 @@ typedef struct {
 	
 	char stratum_v1_listen_addr[128];
 	int stratum_v1_listen_port;
+	int stratum_v1_listen_lottery_port;
 	int stratum_v1_max_clients;
 	int stratum_v1_max_threads;
 	int stratum_v1_max_clients_per_thread;
@@ -160,6 +161,7 @@ typedef struct {
 	char datum_pool_pubkey[1024];
 	int datum_protocol_global_timeout;
 	uint64_t datum_protocol_global_timeout_ms;
+	bool datum_lottery_endpoint;
 	
 	uint32_t prime_id;
 	unsigned char override_mining_pool_scriptsig[256];

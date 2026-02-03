@@ -60,6 +60,7 @@
 #include "datum_protocol.h"
 
 T_DATUM_SOCKET_APP *global_stratum_app = NULL;
+T_DATUM_SOCKET_APP *global_stratum_lottery_app = NULL;
 
 int stratum_job_next = 0;
 T_DATUM_STRATUM_JOB stratum_job_list[MAX_STRATUM_JOBS];
@@ -125,23 +126,18 @@ void datum_stratum_v1_shutdown_all(void) {
 	return;
 }
 
-// Started as its own pthread during startup
-void *datum_stratum_v1_socket_server(void *arg) {
-	// setup the stratum v1 DATUM socket server
+// Helper function to create and initialize a stratum server with the given name and port
+static T_DATUM_SOCKET_APP *datum_stratum_create_server(const char *server_name, int listen_port) {
 	T_DATUM_SOCKET_APP *app;
-	pthread_t pthread_datum_stratum_socket_server;
-	int ret;
 	int i,j;
-	struct rlimit rlimit;
-	
 	uint64_t ram_allocated = 0;
 	
-	DLOG_DEBUG("Stratum V1 server startup");
+	DLOG_DEBUG("%s startup on port %d", server_name, listen_port);
 	
 	// Setup the socket "app" for Stratum V1
-	app = (T_DATUM_SOCKET_APP *)calloc(1,sizeof(T_DATUM_SOCKET_APP));
+	app = (T_DATUM_SOCKET_APP *)calloc(1, sizeof(T_DATUM_SOCKET_APP));
 	if (!app) {
-		DLOG_FATAL("Could not allocate memory for Stratum V1 server app metadata! (%lu bytes)", (unsigned long)sizeof(T_DATUM_SOCKET_APP));
+		DLOG_FATAL("Could not allocate memory for %s app metadata! (%lu bytes)", server_name, (unsigned long)sizeof(T_DATUM_SOCKET_APP));
 		panic_from_thread(__LINE__);
 		return NULL;
 	}
@@ -149,7 +145,7 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	
 	memset(app, 0, sizeof(T_DATUM_SOCKET_APP));
 	
-	strcpy(app->name, "Stratum V1 Server");
+	strncpy(app->name, server_name, sizeof(app->name) - 1);
 	
 	// setup callbacks
 	app->init_func = datum_stratum_v1_socket_thread_init;
@@ -159,7 +155,7 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	app->new_client_func = datum_stratum_v1_socket_thread_client_new;
 	
 	// set listen port
-	app->listen_port = datum_config.stratum_v1_listen_port;
+	app->listen_port = listen_port;
 	
 	// setup limits
 	app->max_clients_thread = datum_config.stratum_v1_max_clients_per_thread;
@@ -172,7 +168,7 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	// allocate memory for DATUM socket thread data
 	app->datum_threads = (T_DATUM_THREAD_DATA *) calloc(app->max_threads + 1, sizeof(T_DATUM_THREAD_DATA));
 	if (!app->datum_threads) {
-		DLOG_FATAL("Could not allocate memory for Stratum V1 server thread pool data! (%lu bytes)", (unsigned long)(sizeof(T_DATUM_THREAD_DATA) * (app->max_threads + 1)));
+		DLOG_FATAL("Could not allocate memory for %s thread pool data! (%lu bytes)", server_name, (unsigned long)(sizeof(T_DATUM_THREAD_DATA) * (app->max_threads + 1)));
 		panic_from_thread(__LINE__);
 		return NULL;
 	}
@@ -182,7 +178,7 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	// allocate once for the whole chunk, and set the pointers.  no need to do tons of calls for a static block of data
 	app->datum_threads[0].app_thread_data = calloc(app->max_threads + 1, sizeof(T_DATUM_STRATUM_THREADPOOL_DATA));
 	if (!app->datum_threads[0].app_thread_data) {
-		DLOG_FATAL("Could not allocate memory for Stratum V1 server thread pool app data! (%lu bytes)", (unsigned long)(sizeof(T_DATUM_STRATUM_THREADPOOL_DATA) * (app->max_threads + 1)));
+		DLOG_FATAL("Could not allocate memory for %s thread pool app data! (%lu bytes)", server_name, (unsigned long)(sizeof(T_DATUM_STRATUM_THREADPOOL_DATA) * (app->max_threads + 1)));
 		panic_from_thread(__LINE__);
 		return NULL;
 	}
@@ -197,7 +193,7 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	// T_DATUM_MINER_DATA
 	app->datum_threads[0].client_data[0].app_client_data = calloc(((app->max_threads*app->max_clients_thread)+1), sizeof(T_DATUM_MINER_DATA));
 	if (!app->datum_threads[0].client_data[0].app_client_data) {
-		DLOG_FATAL("Could not allocate memory for Stratum V1 server per-client data! (%lu bytes)", (unsigned long)(((app->max_threads*app->max_clients_thread)+1) * sizeof(T_DATUM_MINER_DATA)));
+		DLOG_FATAL("Could not allocate memory for %s per-client data! (%lu bytes)", server_name, (unsigned long)(((app->max_threads*app->max_clients_thread)+1) * sizeof(T_DATUM_MINER_DATA)));
 		panic_from_thread(__LINE__);
 		return NULL;
 	}
@@ -209,6 +205,26 @@ void *datum_stratum_v1_socket_server(void *arg) {
 				app->datum_threads[i].client_data[j].app_client_data = &((char *)app->datum_threads[0].client_data[0].app_client_data)[((i*app->max_clients_thread)+j) * sizeof(T_DATUM_MINER_DATA)];
 			}
 		}
+	}
+	
+	DLOG_DEBUG("%"PRIu64" MB of RAM allocated for %s data.", ram_allocated>>20, server_name);
+	
+	return app;
+}
+
+// Started as its own pthread during startup
+void *datum_stratum_v1_socket_server(void *arg) {
+	// setup the stratum v1 DATUM socket server
+	T_DATUM_SOCKET_APP *app;
+	pthread_t pthread_datum_stratum_socket_server;
+	int ret;
+	int i,j;
+	struct rlimit rlimit;
+	
+	// Create the stratum server
+	app = datum_stratum_create_server("Stratum V1 Server", datum_config.stratum_v1_listen_port);
+	if (!app) {
+		return NULL;
 	}
 	
 	// init locks for each job
@@ -252,7 +268,6 @@ void *datum_stratum_v1_socket_server(void *arg) {
 	}
 	
 	DLOG_INFO("Stratum V1 Server Init complete.");
-	DLOG_DEBUG("%"PRIu64" MB of RAM allocated for Stratum V1 server data.", ram_allocated>>20);
 	
 	// TODO: If limits are too low, attempt to set our ulimits in case we're allowed to do so but it hasn't been done before executing.
 	if (!getrlimit(RLIMIT_NOFILE, &rlimit)) {
@@ -283,6 +298,77 @@ void *datum_stratum_v1_socket_server(void *arg) {
 		pthread_rwlock_unlock(&stratum_global_latest_empty_stat);
 		
 		usleep(11000);
+	}
+	
+	return NULL;
+}
+
+// Lottery endpoint stratum server (for solo mining)
+void *datum_stratum_v1_socket_server_with_port(void *arg) {
+	int *port_ptr = (int *)arg;
+	int lottery_port = *port_ptr;
+	T_DATUM_SOCKET_APP *app;
+	pthread_t pthread_datum_stratum_socket_server;
+	int ret;
+	int i, j;
+	struct rlimit rlimit;
+	
+	DLOG_DEBUG("Stratum V1 Lottery server startup on port %d", lottery_port);
+	
+	// Create the stratum lottery server
+	app = datum_stratum_create_server("Stratum V1 Lottery", lottery_port);
+	if (!app) {
+		return NULL;
+	}
+	
+	pthread_rwlock_rdlock(&stratum_global_job_ptr_lock);
+	i = global_latest_stratum_job_index;
+	pthread_rwlock_unlock(&stratum_global_job_ptr_lock);
+	
+	// we wait for the block template thread to have work for us before moving on.
+	if (i < 0) {
+		DLOG_DEBUG("Lottery endpoint: Waiting for our first job before starting listening server...");
+		j = 0;
+		i = global_latest_stratum_job_index;
+		while(i<0) {
+			usleep(50000);
+			pthread_rwlock_rdlock(&stratum_global_job_ptr_lock);
+			i = global_latest_stratum_job_index;
+			pthread_rwlock_unlock(&stratum_global_job_ptr_lock);
+			j++;
+			if (j > 500 && j % 100 == 1) {
+				DLOG_ERROR("Lottery endpoint: Did not see an initial stratum job after ~%d seconds. Is your node properly setup?", j / 20);
+			}
+		}
+	}
+	
+	// start the DATUM socket server
+	DLOG_DEBUG("Starting lottery listener thread %p", app);
+	ret = pthread_create(&pthread_datum_stratum_socket_server, NULL, datum_gateway_listener_thread, app);
+	if (ret != 0) {
+		DLOG_FATAL("Could not pthread_create for DATUM lottery socket listener!: %s", strerror(ret));
+		panic_from_thread(__LINE__);
+		return NULL;
+	}
+	
+	DLOG_INFO("Stratum V1 Lottery Server Init complete on port %d.", lottery_port);
+	
+	// TODO: If limits are too low, attempt to set our ulimits in case we're allowed to do so but it hasn't been done before executing.
+	if (!getrlimit(RLIMIT_NOFILE, &rlimit)) {
+		if (app->max_clients > rlimit.rlim_max) {
+			DLOG_WARN("*** NOTE *** Max Stratum lottery clients (%llu) exceeds hard open file limit (Soft: %llu / Hard: %llu)", (unsigned long long)app->max_clients, (unsigned long long)rlimit.rlim_cur, (unsigned long long)rlimit.rlim_max);
+			DLOG_WARN("*** NOTE *** Adjust max open file hard limit or you WILL run into issues before reaching max clients!");
+		} else if (app->max_clients > rlimit.rlim_cur) {
+			DLOG_WARN("*** NOTE *** Max Stratum lottery clients (%llu) exceeds open file soft limit (Soft: %llu / Hard: %llu)", (unsigned long long)app->max_clients, (unsigned long long)rlimit.rlim_cur, (unsigned long long)rlimit.rlim_max);
+			DLOG_WARN("*** NOTE *** You should increase the soft open file limit to prevent issues as you approach max clients!");
+		}
+	}
+	
+	global_stratum_lottery_app = app;
+	
+	// Keep thread alive
+	while (1) {
+		usleep(100000);
 	}
 	
 	return NULL;
