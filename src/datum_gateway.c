@@ -60,6 +60,7 @@
 #include "datum_api.h"
 #include "datum_coinbaser.h"
 #include "datum_protocol.h"
+#include "datum_rootstock.h"
 
 const char *datum_gateway_config_filename = NULL;
 
@@ -192,6 +193,12 @@ int main(const int argc, const char * const * const argv) {
 	}
 	last_datum_protocol_connect_tsms = current_time_millis();
 	
+	if (datum_rootstock_init()) {
+		DLOG_FATAL("Error initializing Rootstock merged mining!");
+		usleep(100000);
+		exit(1);
+	}
+	
 #ifdef ENABLE_API
 	if (datum_api_init()) {
 		DLOG_FATAL("Error initializing API interface");
@@ -225,6 +232,9 @@ int main(const int argc, const char * const * const argv) {
 	
 	DLOG_DEBUG("Starting template fetcher thread");
 	pthread_create(&pthread_datum_gateway_template, NULL, datum_gateway_template_thread, NULL);
+	
+	// Start Rootstock merged mining thread if enabled
+	datum_rootstock_start();
 	
 	// Note: The stratum thread will wait for a template to be available for some time before panicking.
 	DLOG_DEBUG("Starting Stratum v1 server");

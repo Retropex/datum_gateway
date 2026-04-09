@@ -53,6 +53,7 @@
 #include "datum_blocktemplates.h"
 #include "datum_conf.h"
 #include "datum_stratum.h"
+#include "datum_rootstock.h"
 
 volatile sig_atomic_t new_notify = 0;
 atomic_int new_notify_threadsafe = 0;
@@ -571,6 +572,7 @@ void *datum_gateway_template_thread(void *args) {
 		gbt = NULL;
 		
 		if ((!was_notified) || (new_notify || new_notify_threadsafe)) {
+			uint64_t last_rsk_notify_id = datum_rootstock_get_notify_id();
 			for(i=0;i<(((uint64_t)datum_config.bitcoind_work_update_seconds*(uint64_t)1000000)/(uint64_t)2500);i++) {
 				usleep(2500);
 				if (new_notify || new_notify_threadsafe) {
@@ -580,6 +582,15 @@ void *datum_gateway_template_thread(void *args) {
 					wnc = 0;
 					DLOG_INFO("NEW NETWORK BLOCK NOTIFICATION RECEIVED");
 					break;
+				}
+				if (datum_rootstock_is_active()) {
+					uint64_t cur_rsk_notify_id = datum_rootstock_get_notify_id();
+					if (cur_rsk_notify_id != last_rsk_notify_id) {
+						last_rsk_notify_id = cur_rsk_notify_id;
+						DLOG_DEBUG("RSK: New RSK work detected, triggering template update");
+						datum_blocktemplates_notify_othercause();
+						break;
+					}
 				}
 			}
 		} else {

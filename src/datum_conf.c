@@ -190,6 +190,17 @@ const T_DATUM_CONFIG_ITEM datum_config_options[] = {
 		.required = false, .ptr = &datum_config.datum_pooled_mining_only, 	.default_bool = true },
 	{ .var_type = DATUM_CONF_INT, 		.category = "datum", 		.name = "protocol_global_timeout",		.description = "If no valid messages are received from the DATUM server in this many seconds, give up and try to reconnect",
 		.required = false, .ptr = &datum_config.datum_protocol_global_timeout, 	.default_int = 60 },
+	// rootstock
+	{ .var_type = DATUM_CONF_BOOL, 		.category = "rootstock", 	.name = "enable_rootstock", 			.description = "Enable merge mining for Rootstock (RSK)",
+		.required = false, .ptr = &datum_config.rootstock_enable_rootstock,		.default_bool = false},
+	{ .var_type = DATUM_CONF_STRING,	.category = "rootstock",	.name = "rpcurl",						.description = "URL of the Rootstock node JSON-RPC endpoint",
+		.required = false, .ptr = datum_config.rootstock_rpcurl,	.default_string[0] = "http://localhost:4444", .max_string_len = sizeof(datum_config.rootstock_rpcurl)},
+	{ .var_type = DATUM_CONF_STRING,	.category = "rootstock",	.name = "rpcuser",						.description = "Rootstock node JSON-RPC username (leave empty if not required)",
+		.required = false, .ptr = datum_config.rootstock_rpcuser,	.default_string[0] = "", .max_string_len = sizeof(datum_config.rootstock_rpcuser)},
+	{ .var_type = DATUM_CONF_STRING,	.category = "rootstock",	.name = "rpcpassword",					.description = "Rootstock node JSON-RPC password (leave empty if not required)",
+		.required = false, .ptr = datum_config.rootstock_rpcpassword,	.default_string[0] = "", .max_string_len = sizeof(datum_config.rootstock_rpcpassword)},
+	{ .var_type = DATUM_CONF_INT,	.category = "rootstock",	.name = "poll_interval",				.description = "How often to poll the RSK node for new work, in seconds",
+		.required = false, .ptr = &datum_config.rootstock_poll_interval,	.default_int = 2},
 };
 
 #define NUM_CONFIG_ITEMS (sizeof(datum_config_options) / sizeof(datum_config_options[0]))

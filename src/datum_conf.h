@@ -161,6 +161,12 @@ typedef struct {
 	int datum_protocol_global_timeout;
 	uint64_t datum_protocol_global_timeout_ms;
 	
+	int rootstock_enable_rootstock;
+	char rootstock_rpcurl[256];
+	char rootstock_rpcuser[128];
+	char rootstock_rpcpassword[128];
+	int rootstock_poll_interval;
+	
 	uint32_t prime_id;
 	unsigned char override_mining_pool_scriptsig[256];
 	int override_mining_pool_scriptsig_len;

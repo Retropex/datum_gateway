@@ -58,6 +58,7 @@
 #include "datum_coinbaser.h"
 #include "datum_submitblock.h"
 #include "datum_protocol.h"
+#include "datum_rootstock.h"
 
 T_DATUM_SOCKET_APP *global_stratum_app = NULL;
 
@@ -1259,6 +1260,22 @@ int client_mining_submit(T_DATUM_CLIENT_DATA *c, uint64_t id, json_t *params_obj
 		if (job->is_datum_job) {
 			// submit via DATUM
 			datum_protocol_pow_submit(c, job, username_s, was_block, empty_work, quickdiff, block_header, job_diff, full_cb_txn, cb, extranonce_bin, coinbase_index);
+		}
+	}
+	
+	if (datum_rootstock_is_active()) {
+		T_DATUM_RSK_WORK rsk_work;
+		if (datum_rootstock_get_work(&rsk_work)) {
+			if (compare_hashes(share_hash, rsk_work.target) <= 0) {
+				DLOG_INFO("RSK: Share meets RSK target, submitting to RSK node");
+				datum_rootstock_submit_solution(
+					block_header,
+					full_cb_txn,
+					cb->coinb1_len + 12 + cb->coinb2_len,
+					(const unsigned char (*)[32])job->merklebranches_bin,
+					job->merklebranch_count
+				);
+			}
 		}
 	}
 	

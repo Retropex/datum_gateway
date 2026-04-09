@@ -52,10 +52,29 @@
 #include "datum_jsonrpc.h"
 #include "datum_protocol.h"
 #include "datum_coinbaser.h"
+#include "datum_rootstock.h"
 
 CURL *coinbaser_curl = NULL;
 
 const char *cbstart_hex = "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff"; // 82 len hex, 41 bytes
+
+static int append_rsk_op_return_hex(char *buf) {
+	unsigned char rsk_script[RSK_OP_RETURN_SCRIPT_LEN];
+	int script_len;
+	int idx = 0;
+
+	script_len = datum_rootstock_build_op_return_script(rsk_script);
+	if (script_len <= 0) return 0;
+
+	idx += sprintf(&buf[idx], "0000000000000000");
+	idx += append_bitcoin_varint_hex(script_len, &buf[idx]);
+	for (int i = 0; i < script_len; i++) {
+		uchar_to_hex(&buf[idx], rsk_script[i]);
+		idx += 2;
+	}
+
+	return idx;
+}
 
 #define MAX_COINBASE_TAG_SPACE 86 // leaves space for BIP34 height, extranonces, datum prime tag, etc.
 
@@ -188,6 +207,8 @@ void generate_coinbase_txns_for_stratum_job_subtypebysize(T_DATUM_STRATUM_JOB *s
 	uint64_t mval = 0;
 	bool c1full = false;
 	bool en_done = false;
+	bool rsk_active = datum_rootstock_is_active();
+	int rsk_extra_outputs = rsk_active ? 1 : 0;
 	// chicken and egg problem.  we need to know the output count before we can close off coinb1 if !space_for_en_in_coinbase
 	// either way, we want to start out coinb2 with outputs
 	i = remaining_size;
@@ -223,13 +244,13 @@ void generate_coinbase_txns_for_stratum_job_subtypebysize(T_DATUM_STRATUM_JOB *s
 	// "m" outputs fit
 	if (space_for_en_in_coinbase) {
 		// we'll start the empty coinb2 with the "sequence"
-		m+=2; // pool addr + witness
+		m+=2+rsk_extra_outputs; // pool addr + witness + rsk
 		pk_u64le(s->coinbase[coinbase_index].coinb2, cb2idx[coinbase_index], 0x6666666666666666ULL);  // "ffffffff"
 		cb2idx[coinbase_index] = 8;
-		cb2idx[coinbase_index] += append_bitcoin_varint_hex(m, &s->coinbase[coinbase_index].coinb2[cb2idx[coinbase_index]]); // us, witness, and "m" outputs
+		cb2idx[coinbase_index] += append_bitcoin_varint_hex(m, &s->coinbase[coinbase_index].coinb2[cb2idx[coinbase_index]]); // us, witness, rsk, and "m" outputs
 	} else {
-		m+=3;
-		cb1idx[coinbase_index] += append_bitcoin_varint_hex(m, &s->coinbase[coinbase_index].coinb1[cb1idx[coinbase_index]]); // extranonce, us, witness commit, and "m" outputs
+		m+=3+rsk_extra_outputs;
+		cb1idx[coinbase_index] += append_bitcoin_varint_hex(m, &s->coinbase[coinbase_index].coinb1[cb1idx[coinbase_index]]); // extranonce, us, witness commit, rsk, and "m" outputs
 		
 		if (!special_coinb1) {
 			// append extranonce op_return
@@ -304,6 +325,10 @@ void generate_coinbase_txns_for_stratum_job_subtypebysize(T_DATUM_STRATUM_JOB *s
 	}
 	
 	// witness commit output costs 46 bytes
+	// append RSK OP_RETURN output if active (before witness commitment)
+	if (rsk_active) {
+		cb2idx[coinbase_index] += append_rsk_op_return_hex(&s->coinbase[coinbase_index].coinb2[cb2idx[coinbase_index]]);
+	}
 	// append the default_witness_commitment
 	cb2idx[coinbase_index] += sprintf(&s->coinbase[coinbase_index].coinb2[cb2idx[coinbase_index]], "0000000000000000%2.2x%s", (unsigned int)strlen(s->block_template->default_witness_commitment)>>1, s->block_template->default_witness_commitment);
 	// lock time
@@ -347,6 +372,8 @@ void generate_base_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool ne
 	int cb1idx[1] = { 0 };
 	int cb2idx[1] = { 0 };
 	int target_pot_index;
+	bool rsk_active = datum_rootstock_is_active();
+	int rsk_extra_outputs = rsk_active ? 1 : 0;
 	
 	if (datum_protocol_is_active()) {
 		// DATUM
@@ -408,7 +435,7 @@ void generate_base_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool ne
 		// we'll start the empty coinb2 with the "sequence"
 		pk_u64le(s->coinbase[0].coinb2, 0, 0x6666666666666666ULL);  // "ffffffff"
 		cb2idx[0] = 8;
-		cb2idx[0] += append_bitcoin_varint_hex(2, &s->coinbase[0].coinb2[cb2idx[0]]); // us and witness commit
+		cb2idx[0] += append_bitcoin_varint_hex(2+rsk_extra_outputs, &s->coinbase[0].coinb2[cb2idx[0]]); // us, witness commit, and rsk
 		
 		if (new_block) {
 			// copy the beginning to the subsidy-only
@@ -421,7 +448,7 @@ void generate_base_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool ne
 		if (new_block) {
 			j = cb1idx[0];
 		}
-		cb1idx[0] += append_bitcoin_varint_hex(3, &s->coinbase[0].coinb1[cb1idx[0]]); // extranonce, us, and witness commit
+		cb1idx[0] += append_bitcoin_varint_hex(3+rsk_extra_outputs, &s->coinbase[0].coinb1[cb1idx[0]]); // extranonce, us, witness commit, and rsk
 		
 		// append extranonce op_return
 		cb1idx[0] += sprintf(&s->coinbase[0].coinb1[cb1idx[0]], "0000000000000000106a0e%04" PRIx16, s->enprefix);
@@ -451,6 +478,10 @@ void generate_base_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool ne
 		k = cb2idx[0];
 	}
 	
+	// append RSK OP_RETURN output if active (before witness commitment)
+	if (rsk_active) {
+		cb2idx[0] += append_rsk_op_return_hex(&s->coinbase[0].coinb2[cb2idx[0]]);
+	}
 	// witness commit output costs 46 bytes
 	// append the default_witness_commitment
 	cb2idx[0] += sprintf(&s->coinbase[0].coinb2[cb2idx[0]], "0000000000000000%2.2x%s", (unsigned int)strlen(s->block_template->default_witness_commitment)>>1, s->block_template->default_witness_commitment);
@@ -511,6 +542,8 @@ void generate_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool empty_o
 	int cb_input_sz = 0;
 	
 	bool space_for_en_in_coinbase = false;
+	bool rsk_active = datum_rootstock_is_active();
+	int rsk_extra_outputs = rsk_active ? 1 : 0;
 	
 	int cb1idx[MAX_COINBASE_TYPES] = { 0,0,0,0,0,0 };
 	int cb2idx[MAX_COINBASE_TYPES] = { 0,0,0,0,0,0 };
@@ -614,7 +647,7 @@ void generate_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool empty_o
 		// we'll start the empty coinb2 with the "sequence"
 		pk_u64le(s->coinbase[0].coinb2, 0, 0x6666666666666666ULL);  // "ffffffff"
 		cb2idx[0] = 8;
-		cb2idx[0] += append_bitcoin_varint_hex(2, &s->coinbase[0].coinb2[cb2idx[0]]); // us and witness commit
+		cb2idx[0] += append_bitcoin_varint_hex(2+rsk_extra_outputs, &s->coinbase[0].coinb2[cb2idx[0]]); // us, witness commit, and rsk
 		
 		if (empty_only) {
 			// copy the beginning to the subsidy-only
@@ -623,11 +656,11 @@ void generate_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool empty_o
 			append_bitcoin_varint_hex(1, &s->subsidy_only_coinbase.coinb2[8]); // just us!
 		}
 	} else {
-		// we're already at the point in coinb1 where we need an output count, which will be 3
+		// we're already at the point in coinb1 where we need an output count, which will be 3 (+ rsk)
 		if (empty_only) {
 			j = cb1idx[0];
 		}
-		cb1idx[0] += append_bitcoin_varint_hex(3, &s->coinbase[0].coinb1[cb1idx[0]]); // extranonce, us, and witness commit
+		cb1idx[0] += append_bitcoin_varint_hex(3+rsk_extra_outputs, &s->coinbase[0].coinb1[cb1idx[0]]); // extranonce, us, witness commit, and rsk
 		
 		// append extranonce op_return
 		cb1idx[0] += sprintf(&s->coinbase[0].coinb1[cb1idx[0]], "0000000000000000106a0e%04" PRIx16, s->enprefix);
@@ -657,6 +690,9 @@ void generate_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool empty_o
 		k = cb2idx[0];
 	}
 	
+	if (rsk_active) {
+		cb2idx[0] += append_rsk_op_return_hex(&s->coinbase[0].coinb2[cb2idx[0]]);
+	}
 	// witness commit output costs 46 bytes
 	// append the default_witness_commitment
 	cb2idx[0] += sprintf(&s->coinbase[0].coinb2[cb2idx[0]], "0000000000000000%2.2x%s", (unsigned int)strlen(s->block_template->default_witness_commitment)>>1, s->block_template->default_witness_commitment);
@@ -697,11 +733,13 @@ void generate_coinbase_txns_for_stratum_job(T_DATUM_STRATUM_JOB *s, bool empty_o
 		// total static bytes = 46+9+1+41+4+3+4+15 = 123 bytes
 		// not-static bytes = pool_addr_script_len + cb_input_sz + (space_for_en_in_coinbase?0:10)
 		//     --- it costs 10 extra bytes to do the OP_RETURN based extranonce
+		// RSK OP_RETURN output adds 52 bytes when active (8 value + 1 script_len + 43 script)
+		int rsk_output_sz = rsk_active ? RSK_OP_RETURN_OUTPUT_LEN : 0;
 		
 		if (!space_for_en_in_coinbase) {
-			cb_req_sz[1] = cb_req_sz[2] = cb_req_sz[3] = cb_req_sz[4] = cb_req_sz[5] = 119 + s->pool_addr_script_len + cb_input_sz + 10;
+			cb_req_sz[1] = cb_req_sz[2] = cb_req_sz[3] = cb_req_sz[4] = cb_req_sz[5] = 119 + s->pool_addr_script_len + cb_input_sz + 10 + rsk_output_sz;
 		} else {
-			cb_req_sz[1] = cb_req_sz[2] = cb_req_sz[3] = cb_req_sz[4] = cb_req_sz[5] = 119 + s->pool_addr_script_len + cb_input_sz;
+			cb_req_sz[1] = cb_req_sz[2] = cb_req_sz[3] = cb_req_sz[4] = cb_req_sz[5] = 119 + s->pool_addr_script_len + cb_input_sz + rsk_output_sz;
 			cb_req_sz[2] += 10; // always OP_RETURN extranonce for type 2
 		}
 		
