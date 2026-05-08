@@ -83,7 +83,7 @@ const T_DATUM_CONFIG_ITEM datum_config_options[] = {
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "max_clients",				.description = "Maximum total Stratum clients before rejecting connections",
 		.required = false, .ptr = &datum_config.stratum_v1_max_clients, 				.default_int = 1024 },
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "vardiff_min",				.description = "Work difficulty floor",
-		.required = false, .ptr = &datum_config.stratum_v1_vardiff_min, 				.default_int = 16384 },
+		.required = false, .ptr = &datum_config.stratum_v1_vardiff_min, 				.default_int = 1000000 },
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "vardiff_target_shares_min",.description = "Adjust work difficulty to target this many shares per minute",
 		.required = false, .ptr = &datum_config.stratum_v1_vardiff_target_shares_min, 	.default_int = 8 },
 	{ .var_type = DATUM_CONF_INT, 		.category = "stratum", 		.name = "vardiff_quickdiff_count",	.description = "How many shares before considering a quick diff update",
