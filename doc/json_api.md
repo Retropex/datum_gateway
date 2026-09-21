@@ -167,6 +167,9 @@ Endpoint: `/v1/configuration`
 
 HTTP auth is required for both `GET` and `POST` request.
 
+A `POST` request must additionally send the anti-CSRF token in a `X-DATUM-CSRF` header, and use a `Content-Type` of `application/json`.
+The token is returned by the `GET` method below (as `csrf_token`), and stays the same as long as `api.admin_password` and `api.listen_port` do.
+
 `GET` method
 
 ```
@@ -189,7 +192,8 @@ HTTP auth is required for both `GET` and `POST` request.
   "work_update_seconds": 40,
   "rpcurl": "http://localhost:8332",
   "rpcuser": "test",
-  "rpcpassword_set": true
+  "rpcpassword_set": true,
+  "csrf_token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 ```
 
