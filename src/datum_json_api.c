@@ -34,6 +34,7 @@
  */
 
 #include <string.h>
+#include <strings.h>
 #include <jansson.h>
 #include <microhttpd.h>
 
@@ -44,8 +45,52 @@
 #include "datum_protocol.h"
 #include "datum_utils.h"
 
-int datum_api_json_check_password(struct MHD_Connection * const connection) {
+static int datum_api_json_error_response(struct MHD_Connection * const connection, const unsigned int status_code, const char * const message) {
+	json_t * const json_response = json_object();
+	json_object_set_new(json_response, "error", json_string(message));
+	char * const json_response_string = json_dumps(json_response, JSON_INDENT(0));
+	json_decref(json_response);
+	struct MHD_Response * const response = MHD_create_response_from_buffer(strlen(json_response_string), (void *)json_response_string, MHD_RESPMEM_MUST_COPY);
+	free(json_response_string);
+	MHD_add_response_header(response, "Content-Type", "application/json");
+	return datum_api_submit_uncached_response(connection, status_code, response);
+}
+
+static bool datum_api_json_check_csrf(struct MHD_Connection * const connection) {
+	const char * const csrf = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "X-DATUM-CSRF");
+	if (!csrf) {
+		DLOG_DEBUG("Missing CSRF token in request");
+		datum_api_json_error_response(connection, MHD_HTTP_FORBIDDEN, "Missing X-DATUM-CSRF header");
+		return false;
+	}
+	if (!datum_secure_strequals(datum_config.api_csrf_token, sizeof(datum_config.api_csrf_token)-1, csrf)) {
+		DLOG_DEBUG("Wrong CSRF token in request");
+		datum_api_json_error_response(connection, MHD_HTTP_FORBIDDEN, "Wrong X-DATUM-CSRF header");
+		return false;
+	}
+	
+	return true;
+}
+
+static bool datum_api_json_check_content_type(struct MHD_Connection * const connection) {
+	static const char expected[] = "application/json";
+	const char *content_type = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE);
+	if (!content_type) return false;
+	while (content_type[0] == ' ' || content_type[0] == '\t') ++content_type;
+	if (strncasecmp(content_type, expected, sizeof(expected)-1)) return false;
+	content_type = &content_type[sizeof(expected)-1];
+	while (content_type[0] == ' ' || content_type[0] == '\t') ++content_type;
+	// Parameters (eg, "; charset=utf-8") are acceptable, anything else isn't
+	return (content_type[0] == '\0' || content_type[0] == ';');
+}
+
+int datum_api_json_check_password(struct MHD_Connection * const connection, const bool require_csrf) {
 	int ret;
+	
+	if (require_csrf && !datum_api_json_check_csrf(connection)) {
+		return false;
+	}
+	
 	char * const username = MHD_digest_auth_get_username(connection);
 	const bool have_username = (username != NULL);
 	const char * const realm = "DATUM Gateway";
@@ -68,7 +113,7 @@ int datum_api_json_check_password(struct MHD_Connection * const connection) {
 		struct MHD_Response * const response = MHD_create_response_from_buffer(strlen(json_response_string), (void *)json_response_string, MHD_RESPMEM_MUST_COPY);
 		free(json_response_string);
 		MHD_add_response_header(response, "Content-Type", "application/json");
-		ret = MHD_queue_auth_fail_response2(connection, realm, datum_config.api_csrf_token, response, nonce_is_stale ? MHD_YES : MHD_NO, MHD_DIGEST_ALG_SHA256);
+		ret = MHD_queue_auth_fail_response2(connection, realm, "x", response, nonce_is_stale ? MHD_YES : MHD_NO, MHD_DIGEST_ALG_SHA256);
 		MHD_destroy_response(response);
 		return false;
 	}
@@ -295,7 +340,7 @@ int datum_api_json_stratum_client_list(struct MHD_Connection * const connection)
 		free(json_string); 
 		return datum_api_submit_uncached_response(connection, MHD_HTTP_OK, response);
 	}
-	if (!datum_api_json_check_password(connection)) {
+	if (!datum_api_json_check_password(connection, false)) {
 		json_decref(client);
 		return MHD_YES;
 	}
@@ -403,7 +448,7 @@ int datum_api_json_configuration(struct MHD_Connection * const connection) {
 		free(json_string);
 		return datum_api_submit_uncached_response(connection, MHD_HTTP_OK, response);
 	}
-	if (!datum_api_json_check_password(connection)) {
+	if (!datum_api_json_check_password(connection, false)) {
 		json_decref(config);
 		return MHD_YES;
 	}
@@ -431,6 +476,7 @@ int datum_api_json_configuration(struct MHD_Connection * const connection) {
 	json_object_set_new(config, "rpcurl", json_string(datum_config.bitcoind_rpcurl));
 	json_object_set_new(config, "rpcuser", json_string(datum_config.bitcoind_rpcuser));
 	json_object_set_new(config, "rpcpassword_set", json_boolean(datum_config.bitcoind_rpcpassword[0]));
+	json_object_set_new(config, "csrf_token", json_string(datum_config.api_csrf_token));
 	
 	char *json_string = json_dumps(config, JSON_INDENT(0));
 	json_decref(config);
@@ -455,8 +501,11 @@ int datum_api_json_set_configuration(struct MHD_Connection * const connection, c
 		goto_error = "This api requires admin access (add \"admin_password\" to \"api\" section of config file)";
 		goto error;
 	}
-	if (!datum_api_json_check_password(connection)) {
+	if (!datum_api_json_check_password(connection, true)) {
 		return MHD_YES;
+	}
+	if (!datum_api_json_check_content_type(connection)) {
+		return datum_api_json_error_response(connection, MHD_HTTP_UNSUPPORTED_MEDIA_TYPE, "Content-Type must be application/json");
 	}
 	if (!datum_config.api_modify_conf) {
  		goto_error = "configuration modification is disabled";
