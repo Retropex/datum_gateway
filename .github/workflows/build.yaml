@@ -29,8 +29,6 @@ jobs:
           - oraclelinux:9
           - alpine:latest
           - archlinux:latest
-          - gentoo/stage3:musl-hardened
-          - gentoo/stage3:hardened
           - freebsd
           - freebsd:14.4
           - freebsd:14.4:aarch64
@@ -59,16 +57,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Restore package cache
-        if: startsWith(matrix.os, 'gentoo/')
-        uses: actions/cache/restore@v5
-        with:
-          path: pkg-cache
-          key: never-exists
-          restore-keys: |
-            ${{ matrix.os }}/pkg-cache/${{ matrix.config.cmake_args }}/
-            ${{ matrix.os }}/pkg-cache/
 
       - name: Build inside Docker
         if: "!startsWith(matrix.os, 'freebsd')"
@@ -109,52 +97,6 @@ jobs:
               INSTALL_CMD="pacman -Syu --noconfirm"
               PACKAGES="git base-devel cmake curl jansson libsodium"
               PACKAGES_API="libmicrohttpd"
-              ;;
-            gentoo/*)
-              PKG_CACHE_DIR='/var/cache/binpkgs'
-              INIT_CMD='
-                cat <<\EOF >>/etc/portage/make.conf
-          EMERGE_DEFAULT_OPTS="$EMERGE_DEFAULT_OPTS --quiet-build y --tree"
-          FETCHCOMMAND="$FETCHCOMMAND --progress=dot:giga"  # assumes wget default
-          EOF
-
-                if [ -e /var/cache/binpkgs/gentoo-repo.txz ]; then
-                  rm -rf /var/db/repos/gentoo
-                  tar -C /var/db/repos -xpf /var/cache/binpkgs/gentoo-repo.txz
-                  rm /var/cache/binpkgs/gentoo-repo.txz
-
-                  cache_cksum() {
-                    find /var/db/repos/gentoo /var/cache/binpkgs -type f -print0 | sort -z | xargs -0 sha256sum
-                  }
-                  cache_cksum > /tmp/initial-pkg-cache.cksum
-
-                  emerge --sync --quiet || true  # can fail if cache is recent enough
-                else
-                  emerge --sync --quiet
-                fi
-              '
-              INSTALL_CMD="emerge -1 sec-keys/openpgp-keys-gentoo-release && getuto && cat /etc/portage/make.conf && emerge -vuDkg1 @world && USE='-httpsrr -perl -extra -static-analyzer compiler-rt -openmp sanitize -adns -alt-svc -ftp -hsts -http2 -http3 -imap -pop3 -progress-meter -psl -quic -curl_quic_openssl -smtp -tftp -websockets' emerge -vuDkg1 --noreplace --jobs=\$(nproc) --buildpkg"
-              PACKAGES="dev-vcs/git dev-build/cmake net-misc/curl dev-libs/jansson dev-libs/libsodium virtual/pkgconfig app-portage/gentoolkit"
-              [[ "${{ matrix.os }}" =~ musl ]] && PACKAGES="$PACKAGES sys-libs/argp-standalone"
-              PACKAGES_API="net-libs/libmicrohttpd"
-              PACKAGES_CLANG="llvm-core/clang"
-
-              # musl only supports ASan with clang
-              [[ "${{ matrix.os }}" =~ musl && ! "${{ matrix.config.cmake_args }}" =~ clang ]] && ASAN_CFLAGS=
-
-              POSTINSTALL_CMD='
-                set +ex
-                source /etc/profile
-                set -ex
-              '
-              CLEANUP_CMD='
-                [ -e /tmp/initial-pkg-cache.cksum ] && cache_cksum >/tmp/final-pkg-cache.cksum
-                if ! diff -u /tmp/{initial,final}-pkg-cache.cksum; then
-                  ( cd /var/db/repos && tar --sort=name -cpJf /var/cache/binpkgs/gentoo-repo.txz gentoo )
-                  touch /output/SAVE_CACHE
-                  eclean -t 2w packages --changed-deps
-                fi
-              '
               ;;
           esac
           PACKAGES="$PACKAGES ${{ matrix.config.extra_deps }}"
