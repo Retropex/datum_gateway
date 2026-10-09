@@ -1630,8 +1630,10 @@ void *datum_protocol_client(void *args) {
 			}
 		}
 		
-		// Queue up sends for PoW submissions
-		datum_protocol_pow_queue_submits();
+		// Queue up sends for PoW submissions but only once the handshake is complete.
+		if (datum_state >= 3) {
+			datum_protocol_pow_queue_submits();
+		}
 		
 		pthread_mutex_lock(&datum_protocol_send_buffer_lock);
 		if (server_out_buf) {
