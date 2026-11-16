@@ -1,4 +1,4 @@
-# DATUM Gateway
+# DATUM Gateway security
 **Decentralized Alternative Templates for Universal Mining**
 (c) 2024 Bitcoin Ocean, LLC & Jason Hughes
 
